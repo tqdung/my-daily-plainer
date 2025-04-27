@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import * as cookieParser from 'cookie-parser';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
@@ -12,6 +13,8 @@ async function bootstrap() {
       forbidNonWhitelisted: true, // Optional, throws error if extra properties are present
     }),
   );
+
+  app.use(cookieParser());
 
   const config = new DocumentBuilder()
     .setTitle('Task API')

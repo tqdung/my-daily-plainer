@@ -11,7 +11,7 @@ import { JwtStrategy, OAuth2Strategy } from './strategies';
     UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET,
+      secret: process.env.ACCESS_TOKEN_SECRET,
       signOptions: { expiresIn: '2h' },
     }),
   ],
