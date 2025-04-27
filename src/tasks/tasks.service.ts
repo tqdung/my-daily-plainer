@@ -10,15 +10,23 @@ export class TasksService {
   constructor(private prisma: PrismaService) {}
 
   create({ userId, data }: { userId: string; data: CreateTaskDto }) {
+    const { goalId, ...rest } = data;
+
     return this.prisma.task.create({
       data: {
-        ...data,
+        ...rest,
         user: {
           connect: { id: userId },
         },
+        goal: goalId
+          ? {
+              connect: { id: goalId },
+            }
+          : undefined,
       },
       include: {
         user: true,
+        goal: !!goalId,
       },
     });
   }

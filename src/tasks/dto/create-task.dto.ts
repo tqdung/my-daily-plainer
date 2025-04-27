@@ -10,13 +10,16 @@ import {
 } from 'class-validator';
 
 export class CreateTaskDto {
+  @ApiProperty()
   @IsString()
   title: string;
 
+  @ApiProperty()
   @IsOptional()
   @IsString()
   description?: string;
 
+  @ApiProperty()
   @IsOptional()
   @IsDateString()
   dueDate?: string;
@@ -31,8 +34,14 @@ export class CreateTaskDto {
   @IsEnum(TaskRepeat)
   repeat?: TaskRepeat;
 
+  @ApiProperty()
   @IsOptional()
   @IsInt()
   @Min(1)
   estimatedTime?: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  goalId?: string;
 }
