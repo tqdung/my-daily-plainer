@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id         String    @id @default(uuid())
+  email      String    @unique
+  password   String?
+  name       String?
+  avatar     String?
+  provider   AuthProvider   @default(CREDENTIALS) // enum
+  providerId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tasks      Task[]
+  goals      Goal[]
+}
+
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
+  FACEBOOK
+}
+
+model Goal {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  status      GoalStatus @default(ACTIVE)
+
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+
+  tasks       Task[]
+}
+
+model Task {
+  id            String     @id @default(uuid())
+  title         String
+  description   String?
+  dueDate       DateTime?
+  repeat        TaskRepeat?
+  status        TaskStatus @default(PENDING)
+  estimatedTime Int?
+  actualTime    Int?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+
+  goalId        String?
+  goal          Goal?      @relation(fields: [goalId], references: [id])
+
+  reminders     Reminder[]
+}
+
+model Reminder {
+  id     String   @id @default(uuid())
+  time   DateTime
+  sent   Boolean  @default(false)
+
+  taskId String
+  task   Task     @relation(fields: [taskId], references: [id])
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  SKIPPED
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TaskRepeat {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
