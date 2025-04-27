@@ -14,17 +14,23 @@ import { AuthGuard } from '@nestjs/passport';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto, LoginSocialDto } from './dto/login.dto';
 import { REFRESH_TOKEN_EXPIRED_IN_SECONDS } from './constants';
+import { CurrentUser, RequireAuth } from 'src/common/decorators';
+import { UsersService } from 'src/users/users.service';
+import { UserResponseDto } from 'src/users/dto/user-response.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private userService: UsersService,
+  ) {}
 
   setCookieRefreshToken(res: Response, refreshToken: string) {
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/auth/refresh',
+      path: '/auth/refresh-token',
       maxAge: REFRESH_TOKEN_EXPIRED_IN_SECONDS * 1000,
     });
   }
@@ -88,5 +94,11 @@ export class AuthController {
     } catch (error) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+  }
+
+  @Get('my-profile')
+  @RequireAuth()
+  async getUserInfo(@CurrentUser() user: UserResponseDto) {
+    return this.userService.findOne(user.id);
   }
 }

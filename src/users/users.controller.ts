@@ -7,13 +7,14 @@ import {
   Param,
   Delete,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { transformResponse } from 'src/common/utils';
-import { RequireAuth } from 'src/common/decorators';
+import { CurrentUser, RequireAuth } from 'src/common/decorators';
 
 @Controller('users')
 export class UsersController {
@@ -44,14 +45,24 @@ export class UsersController {
 
   @Patch(':id')
   @RequireAuth()
-  async update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+    @CurrentUser() currentUer: UserResponseDto,
+  ) {
+    if (id !== currentUer.id) {
+      throw new ForbiddenException();
+    }
     const updatedUser = await this.usersService.update(id, updateUserDto);
     return transformResponse(UserResponseDto, updatedUser);
   }
 
   @Delete(':id')
   @RequireAuth()
-  remove(@Param('id') id: string) {
+  remove(@Param('id') id: string, @CurrentUser() currentUer: UserResponseDto) {
+    if (id !== currentUer.id) {
+      throw new ForbiddenException();
+    }
     return this.usersService.remove(id);
   }
 }
