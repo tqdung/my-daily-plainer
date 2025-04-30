@@ -4,15 +4,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto, UpdateTaskDto } from './dto';
 import { MAX_PAGINATION_LIMIT } from 'src/constants';
 import { PaginationResponse } from 'src/common/types';
+import { CalendarService } from 'src/calendar/calendar.service';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private calendarService: CalendarService,
+  ) {}
 
-  create({ userId, data }: { userId: string; data: CreateTaskDto }) {
+  async create({ userId, data }: { userId: string; data: CreateTaskDto }) {
     const { goalId, ...rest } = data;
 
-    return this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
         ...rest,
         user: {
@@ -29,6 +33,12 @@ export class TasksService {
         goal: !!goalId,
       },
     });
+
+    if (task.startDate && task.dueDate) {
+      await this.calendarService.createEventForTask(task);
+    }
+
+    return task;
   }
 
   async getTasks({
@@ -66,5 +76,9 @@ export class TasksService {
 
   async remove(id: string) {
     return this.prisma.task.delete({ where: { id } });
+  }
+
+  hasTaskPermission(task: Task, userId: string) {
+    return task && userId && userId === task.userId;
   }
 }

@@ -13,6 +13,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: { user: UserResponseDto }) {
-    return payload.user;
+    return payload.user; // Reference => authService.generateRefreshToken
   }
 }

@@ -8,15 +8,14 @@ import {
   UnauthorizedException,
   Res,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { AuthGuard } from '@nestjs/passport';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto, LoginSocialDto } from './dto/login.dto';
-import { REFRESH_TOKEN_EXPIRED_IN_SECONDS } from './constants';
-import { CurrentUser, RequireAuth } from 'src/common/decorators';
 import { UsersService } from 'src/users/users.service';
+import { LoginDto, RegisterDto, LoginSocialDto } from './dto';
 import { UserResponseDto } from 'src/users/dto/user-response.dto';
+import { CurrentUser, RequireAuth } from 'src/common/decorators';
+import { REFRESH_TOKEN_EXPIRED_IN_SECONDS } from './constants';
 
 @Controller('auth')
 export class AuthController {
@@ -32,6 +31,7 @@ export class AuthController {
       sameSite: 'strict',
       path: '/auth/refresh-token',
       maxAge: REFRESH_TOKEN_EXPIRED_IN_SECONDS * 1000,
+      // domain: '.mydailyplaner.com' // Allow cookie to share between frontend / backend (mydailyplaner.com, api.mydailyplaner.com)
     });
   }
 
@@ -80,11 +80,12 @@ export class AuthController {
     try {
       const refresh_token = req.cookies['refresh_token'];
       const payload = await this.authService.verifyRefreshToken(refresh_token);
+      console.log(payload)
 
       const newAccessToken =
-        await this.authService.generateAccessToken(payload);
+        await this.authService.generateAccessToken(payload.user);
       const newRefreshToken =
-        await this.authService.generateRefreshToken(payload);
+        await this.authService.generateRefreshToken(payload.user);
 
       this.setCookieRefreshToken(res, newRefreshToken);
 

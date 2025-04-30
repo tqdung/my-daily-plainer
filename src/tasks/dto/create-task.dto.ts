@@ -1,13 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { TaskRepeat, TaskStatus } from '@prisma/client';
 import {
-  IsOptional,
   IsString,
-  IsEnum,
+  IsOptional,
   IsDateString,
+  IsEnum,
   IsInt,
+  IsUUID,
+  IsArray,
   Min,
 } from 'class-validator';
+import { TaskStatus, TaskRepeat } from '@prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateTaskDto {
   @ApiProperty()
@@ -22,17 +24,28 @@ export class CreateTaskDto {
   @ApiProperty()
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  startDate?: string;
 
-  @ApiProperty({ enum: TaskStatus })
+  @ApiProperty()
   @IsOptional()
-  @IsEnum(TaskStatus)
-  status?: TaskStatus;
+  @IsDateString()
+  dueDate?: string;
 
   @ApiProperty({ enum: TaskRepeat })
   @IsOptional()
   @IsEnum(TaskRepeat)
   repeat?: TaskRepeat;
+
+  @ApiProperty({ type: [String], example: ['MO', 'FR'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  repeatDays?: string[];
+
+  @ApiProperty({ enum: TaskStatus })
+  @IsOptional()
+  @IsEnum(TaskStatus)
+  status?: TaskStatus;
 
   @ApiProperty()
   @IsOptional()
@@ -42,6 +55,6 @@ export class CreateTaskDto {
 
   @ApiProperty()
   @IsOptional()
-  @IsString()
+  @IsUUID()
   goalId?: string;
 }

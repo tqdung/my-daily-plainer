@@ -1,6 +1,6 @@
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { AuthProvider } from '@prisma/client';
+import { AuthProvider, CalendarProvider } from '@prisma/client';
 
 export class CreateUserDto {
   @ApiProperty()
@@ -31,4 +31,16 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   providerId?: string;
+
+  @ApiProperty({ required: false, enum: CalendarProvider })
+  @IsOptional()
+  calendarProvider?: CalendarProvider;
+
+  @IsOptional()
+  @IsString()
+  providerAccessToken?: string;
+
+  @IsOptional()
+  @IsString()
+  providerRefreshToken?: string;
 }

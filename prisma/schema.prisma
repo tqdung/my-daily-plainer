@@ -6,19 +6,27 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-model User {
-  id         String    @id @default(uuid())
-  email      String    @unique
-  password   String?
-  name       String?
-  avatar     String?
-  provider   AuthProvider   @default(CREDENTIALS) // enum
-  providerId String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
 
-  tasks      Task[]
-  goals      Goal[]
+model User {
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String?
+  name     String?
+  avatar   String?
+
+  provider             AuthProvider      @default(CREDENTIALS) // Credentials / Google / Facebook
+  providerId           String? // Social provider unique id
+  providerAccessToken  String? // OAuth access token (Google, Facebook...)
+  providerRefreshToken String? // OAuth access token (Google, Facebook...)
+  isCalendarLinked     Boolean           @default(false) // Linked Calendar status
+  calendarProvider     CalendarProvider? // GOOGLE / OUTLOOK
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks  Task[]
+  goals  Goal[]
+  events Event[]
 }
 
 enum AuthProvider {
@@ -27,50 +35,58 @@ enum AuthProvider {
   FACEBOOK
 }
 
+enum CalendarProvider {
+  GOOGLE
+  OUTLOOK
+}
+
 model Goal {
   id          String     @id @default(uuid())
   title       String
   description String?
   startDate   DateTime?
   endDate     DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
   status      GoalStatus @default(ACTIVE)
 
-  userId      String
-  user        User       @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  tasks       Task[]
+  tasks Task[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  Event     Event[]
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
 }
 
 model Task {
-  id            String     @id @default(uuid())
-  title         String
-  description   String?
-  dueDate       DateTime?
-  repeat        TaskRepeat?
-  status        TaskStatus @default(PENDING)
-  estimatedTime Int?
-  actualTime    Int?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id              String      @id @default(uuid())
+  title           String
+  description     String?
+  startDate       DateTime?
+  dueDate         DateTime?
+  repeat          TaskRepeat?
+  repeatDays      String[]
+  status          TaskStatus  @default(PENDING)
+  estimatedTime   Int?
+  actualTime      Int?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  externalEventId String? //  ID from Google Calendar and others
 
-  userId        String
-  user          User       @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  goalId        String?
-  goal          Goal?      @relation(fields: [goalId], references: [id])
+  goalId String?
+  goal   Goal?   @relation(fields: [goalId], references: [id])
 
-  reminders     Reminder[]
-}
-
-model Reminder {
-  id     String   @id @default(uuid())
-  time   DateTime
-  sent   Boolean  @default(false)
-
-  taskId String
-  task   Task     @relation(fields: [taskId], references: [id])
+  reminders Reminder[]
+  Event     Event?
 }
 
 enum TaskStatus {
@@ -80,14 +96,45 @@ enum TaskStatus {
   SKIPPED
 }
 
-enum GoalStatus {
-  ACTIVE
-  COMPLETED
-  ARCHIVED
-}
-
 enum TaskRepeat {
   DAILY
   WEEKLY
   MONTHLY
+}
+
+model Event {
+  id     String  @id @default(uuid())
+  taskId String  @unique // 1 Event = 1 Task
+  userId String
+  goalId String? // Nếu task này thuộc goal
+
+  calendarProvider        CalendarProvider? // GOOGLE, OUTLOOK, null nếu nội bộ
+  externalCalendarEventId String? // ID event bên Google/Outlook nếu sync
+
+  task Task  @relation(fields: [taskId], references: [id])
+  user User  @relation(fields: [userId], references: [id])
+  goal Goal? @relation(fields: [goalId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Reminder {
+  id      String         @id @default(uuid())
+  time    DateTime
+  sent    Boolean        @default(false)
+  method  ReminderMethod @default(PUSH) // Push Notification, Email hoặc cả 2
+  message String?
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum ReminderMethod {
+  PUSH
+  EMAIL
+  BOTH
 }

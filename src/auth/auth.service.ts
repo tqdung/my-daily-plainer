@@ -3,13 +3,11 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { UsersService } from 'src/users/users.service';
-import { LoginDto, LoginSocialDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
-import { transformResponse } from 'src/common/utils';
+import { LoginDto, RegisterDto, LoginSocialDto } from './dto';
+import { encrypt, transformResponse } from 'src/common/utils';
 import { UserResponseDto } from 'src/users/dto/user-response.dto';
 import {
   ACCESS_TOKEN_SECRET,
@@ -24,10 +22,6 @@ export class AuthService {
     private userService: UsersService,
     private jwtService: JwtService,
   ) {}
-
-  transformUser(user: User) {
-    return transformResponse(UserResponseDto, user);
-  }
 
   async generateAccessToken(user: UserResponseDto): Promise<string> {
     return this.jwtService.signAsync(
@@ -70,11 +64,12 @@ export class AuthService {
   async register(data: RegisterDto) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
     const user = await this.userService.create({
-      ...data,
+      email: data.email ?? '',
+      name: data.name ?? '',
       password: hashedPassword,
       provider: 'CREDENTIALS',
     });
-    return this.generateTokens(this.transformUser(user));
+    return this.generateTokens(transformResponse(UserResponseDto, user));
   }
 
   async login(data: LoginDto) {
@@ -84,19 +79,46 @@ export class AuthService {
     const isMatch = await bcrypt.compare(data.password, user.password);
     if (!isMatch) throw new UnauthorizedException('Invalid credentials');
 
-    return this.generateTokens(this.transformUser(user));
+    return this.generateTokens(transformResponse(UserResponseDto, user));
   }
 
   async loginWithSocialProvider(data: LoginSocialDto) {
+    const {
+      email,
+      name,
+      avatar,
+      provider,
+      providerId,
+      accessToken,
+      refreshToken,
+      calendarProvider,
+    } = data;
     let user = await this.userService.findBySocialProvider(
-      data.provider,
-      data.providerId,
+      provider,
+      providerId,
     );
 
+    const hashAccessToken = encrypt(accessToken ?? '');
+    const hasRefreshToken = encrypt(refreshToken ?? '');
+
     if (!user) {
-      user = await this.userService.create(data);
+      user = await this.userService.create({
+        email,
+        name,
+        avatar,
+        provider,
+        providerId,
+        calendarProvider,
+        providerAccessToken: hashAccessToken,
+        providerRefreshToken: hasRefreshToken,
+      });
+    } else {
+      user = await this.userService.update(user.id, {
+        providerAccessToken: hashAccessToken,
+        providerRefreshToken: hasRefreshToken,
+      });
     }
 
-    return this.generateTokens(this.transformUser(user));
+    return this.generateTokens(transformResponse(UserResponseDto, user));
   }
 }

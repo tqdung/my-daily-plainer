@@ -1,20 +1,20 @@
 import {
-  Controller,
   Get,
   Post,
-  Body,
   Patch,
-  Param,
   Delete,
+  Body,
+  Param,
   Query,
+  Controller,
   NotFoundException,
 } from '@nestjs/common';
-import { TasksService } from './tasks.service';
-import { CreateTaskDto, UpdateTaskDto, GetTaskQueryDto } from './dto';
-import { CurrentUser, RequireAuth } from 'src/common/decorators';
-import { UserResponseDto } from 'src/users/dto/user-response.dto';
 import { Prisma, Task } from '@prisma/client';
+import { TasksService } from './tasks.service';
 import { PaginationResponse } from 'src/common/types';
+import { CreateTaskDto, UpdateTaskDto, GetTaskQueryDto } from './dto';
+import { UserResponseDto } from 'src/users/dto/user-response.dto';
+import { CurrentUser, RequireAuth } from 'src/common/decorators';
 
 @Controller('tasks')
 @RequireAuth()
@@ -56,14 +56,10 @@ export class TasksController {
     });
   }
 
-  private hasTaskPermission(task: Task, userId: string) {
-    return task && userId && userId === task.userId;
-  }
-
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: UserResponseDto) {
     const task = await this.tasksService.findOne(id);
-    if (!this.hasTaskPermission(task, user.id)) {
+    if (!this.tasksService.hasTaskPermission(task, user.id)) {
       throw new NotFoundException();
     }
 
@@ -77,7 +73,7 @@ export class TasksController {
     @CurrentUser() user: UserResponseDto,
   ) {
     const task = await this.tasksService.findOne(id);
-    if (!this.hasTaskPermission(task, user.id)) {
+    if (!this.tasksService.hasTaskPermission(task, user.id)) {
       throw new NotFoundException();
     }
 
@@ -87,7 +83,7 @@ export class TasksController {
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() user: UserResponseDto) {
     const task = await this.tasksService.findOne(id);
-    if (!this.hasTaskPermission(task, user.id)) {
+    if (!this.tasksService.hasTaskPermission(task, user.id)) {
       throw new NotFoundException();
     }
 
