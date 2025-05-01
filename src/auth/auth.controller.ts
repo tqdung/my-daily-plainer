@@ -61,7 +61,10 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleCallback(@Req() req: Request & { user: LoginSocialDto }) {
+  async googleCallback(
+    @Req() req: Request & { user: LoginSocialDto },
+    @Res({ passthrough: true }) res,
+  ) {
     const callbackUrl = req.originalUrl;
     const allowedCallbackURLs = ['/auth/google/callback']; // Whitelist domain
     const validCallbackUrl = allowedCallbackURLs.some((url) =>
@@ -72,29 +75,50 @@ export class AuthController {
       throw new UnauthorizedException('Invalid callback URL');
     }
 
-    return this.authService.loginWithSocialProvider(req.user);
+    const { access_token, refresh_token } =
+      await this.authService.loginWithSocialProvider(req.user);
+
+    this.setCookieRefreshToken(res, refresh_token);
+
+    return {
+      access_token,
+      refresh_token,
+    };
   }
 
   @Post('refresh-token')
   async refreshToken(@Req() req: Request, @Res({ passthrough: true }) res) {
     try {
-      const refresh_token = req.cookies['refresh_token'];
-      const payload = await this.authService.verifyRefreshToken(refresh_token);
-      console.log(payload)
+      const token = req.cookies['refresh_token'];
+      if (!token) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+      const payload = await this.authService.verifyRefreshToken(token);
 
-      const newAccessToken =
-        await this.authService.generateAccessToken(payload.user);
-      const newRefreshToken =
-        await this.authService.generateRefreshToken(payload.user);
+      const { access_token, refresh_token } =
+        await this.authService.generateTokens(payload.user);
 
-      this.setCookieRefreshToken(res, newRefreshToken);
+      this.setCookieRefreshToken(res, refresh_token);
 
       return {
-        access_token: newAccessToken,
+        access_token,
       };
     } catch (error) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+  }
+
+  @Get('clear-cookies')
+  clearCookies(@Res() res: Response) {
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      // Nếu bạn đã dùng path riêng khi set, cần truyền path y chang
+      path: '/auth/refresh-token',
+    });
+
+    res.send({ message: 'All cookies cleared' });
   }
 
   @Get('my-profile')
