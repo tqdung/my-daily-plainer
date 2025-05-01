@@ -5,6 +5,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CalendarAdapter } from './interfaces/calendar.adapter';
 import { decrypt } from 'src/common/utils';
 
+// Reference: https://developers.google.com/workspace/calendar/api/v3/reference/events
 type GoogleCalendarEventBody = {
   summary: string;
   description?: string;
@@ -22,81 +23,6 @@ type GoogleCalendarEventBody = {
 @Injectable()
 export class GoogleCalendarAdapter implements CalendarAdapter {
   constructor(private prisma: PrismaService) {}
-
-  async createEvent(user: User, task: Task): Promise<string | null> {
-    const eventBody: GoogleCalendarEventBody = {
-      summary: task.title,
-      description: task.description ?? '',
-      start: {
-        dateTime: task.startDate?.toISOString() ?? '',
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      end: {
-        dateTime: task.dueDate?.toISOString() ?? '',
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      recurrence: task.repeat
-        ? [
-            `RRULE:FREQ=${task.repeat.toUpperCase()}${
-              task.repeatDays?.length
-                ? ';BYDAY=' + task.repeatDays.join(',')
-                : ''
-            }`,
-          ]
-        : undefined,
-    };
-
-    try {
-      const accessToken = decrypt(user.providerAccessToken ?? '');
-      let response = await fetch(
-        'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(eventBody),
-        },
-      );
-
-      if (response.status === 401) {
-        const newToken = await this.refreshAccessToken(user);
-        if (newToken) {
-          response = await this.sendEventRequest(newToken, eventBody);
-        }
-      }
-
-      if (!response.ok) {
-        const error = await response.json();
-        console.error('❌ Google Calendar error:', error);
-        return null;
-      }
-
-      const result = await response.json();
-      return result.id;
-    } catch (err: any) {
-      console.error(
-        '❌ Failed to call Google Calendar API:',
-        err?.message || err,
-      );
-      return null;
-    }
-  }
-
-  private async sendEventRequest(token: string, body: GoogleCalendarEventBody) {
-    return fetch(
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      },
-    );
-  }
 
   private async refreshAccessToken(user: User): Promise<string | null> {
     if (!user.providerRefreshToken) return null;
@@ -122,7 +48,6 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
     const data = await response.json();
     const newAccessToken = data.access_token;
 
-    // Lưu access token mới vào DB
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
@@ -131,5 +56,119 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
     });
 
     return newAccessToken;
+  }
+
+  private async syncTaskToGoogleCalendar({
+    user,
+    task,
+    method,
+    externalCalendarEventId,
+  }: {
+    user: User;
+    task?: Task;
+    method: 'POST' | 'PATCH' | 'DELETE';
+    externalCalendarEventId?: string;
+  }): Promise<string | null> {
+    const event: GoogleCalendarEventBody = {
+      summary: task?.title ?? '',
+      description: task?.description ?? '',
+      start: {
+        dateTime: task?.startDate?.toISOString() ?? '',
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      end: {
+        dateTime: task?.dueDate?.toISOString() ?? '',
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      recurrence: task?.repeat
+        ? [
+            `RRULE:FREQ=${task.repeat.toUpperCase()}${
+              task.repeatDays?.length
+                ? ';BYDAY=' + task.repeatDays.join(',')
+                : ''
+            }`,
+          ]
+        : undefined,
+    };
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events${
+      externalCalendarEventId ? `/${externalCalendarEventId}` : ''
+    }`;
+
+    let res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${user.providerAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(event),
+    });
+
+    // Retry if 401
+    if (res.status === 401) {
+      const newToken = await this.refreshAccessToken(user);
+      if (newToken) {
+        res = await fetch(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${newToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(event),
+        });
+      }
+    }
+
+    if (!res.ok) {
+      const error = await res.json();
+      console.error(`❌ Google Calendar ${method} failed:`, error);
+      return null;
+    }
+
+    if (res.status === 204) {
+      return `${externalCalendarEventId}`;
+    }
+
+    const data = await res.json();
+    return data?.id;
+  }
+
+  async createEvent({
+    user,
+    task,
+  }: {
+    user: User;
+    task: Task;
+  }): Promise<string | null> {
+    return this.syncTaskToGoogleCalendar({ user, task, method: 'POST' });
+  }
+
+  async updateEvent({
+    user,
+    task,
+    externalCalendarEventId,
+  }: {
+    user: User;
+    task: Task;
+    externalCalendarEventId: string;
+  }): Promise<string | null> {
+    if (!externalCalendarEventId) return null;
+
+    return this.syncTaskToGoogleCalendar({ user, task, method: 'PATCH' });
+  }
+
+  async deleteEvent({
+    user,
+    externalCalendarEventId,
+  }: {
+    user: User;
+    externalCalendarEventId: string;
+  }): Promise<string | null> {
+    if (!externalCalendarEventId) return null;
+
+    return this.syncTaskToGoogleCalendar({
+      user,
+      method: 'DELETE',
+      externalCalendarEventId,
+    });
   }
 }

@@ -65,19 +65,18 @@ enum GoalStatus {
 }
 
 model Task {
-  id              String      @id @default(uuid())
-  title           String
-  description     String?
-  startDate       DateTime?
-  dueDate         DateTime?
-  repeat          TaskRepeat?
-  repeatDays      String[]
-  status          TaskStatus  @default(PENDING)
-  estimatedTime   Int?
-  actualTime      Int?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  externalEventId String? //  ID from Google Calendar and others
+  id            String      @id @default(uuid())
+  title         String
+  description   String?
+  startDate     DateTime?
+  dueDate       DateTime?
+  repeat        TaskRepeat?
+  repeatDays    String[]
+  status        TaskStatus  @default(PENDING)
+  estimatedTime Int?
+  actualTime    Int?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -86,7 +85,9 @@ model Task {
   goal   Goal?   @relation(fields: [goalId], references: [id])
 
   reminders Reminder[]
-  Event     Event?
+
+  // ✅ Relation mới
+  events Event[]
 }
 
 enum TaskStatus {
@@ -103,20 +104,18 @@ enum TaskRepeat {
 }
 
 model Event {
-  id     String  @id @default(uuid())
-  taskId String  @unique // 1 Event = 1 Task
-  userId String
-  goalId String? // Nếu task này thuộc goal
+  id     String @id @default(uuid())
+  taskId String @unique
+  task   Task   @relation(fields: [taskId], references: [id])
 
-  calendarProvider        CalendarProvider? // GOOGLE, OUTLOOK, null nếu nội bộ
-  externalCalendarEventId String? // ID event bên Google/Outlook nếu sync
-
-  task Task  @relation(fields: [taskId], references: [id])
-  user User  @relation(fields: [userId], references: [id])
-  goal Goal? @relation(fields: [goalId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  calendarProvider CalendarProvider
+  externalEventId  String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  User             User?            @relation(fields: [userId], references: [id])
+  userId           String?
+  Goal             Goal?            @relation(fields: [goalId], references: [id])
+  goalId           String?
 }
 
 model Reminder {

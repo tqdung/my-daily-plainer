@@ -70,11 +70,46 @@ export class TasksService {
     return task;
   }
 
-  update(id: string, data: UpdateTaskDto) {
-    return this.prisma.task.update({ where: { id }, data });
+  async update(id: string, data: UpdateTaskDto) {
+    const updatedTask = await this.prisma.task.update({ where: { id }, data });
+
+    const hasTime = updatedTask.startDate && updatedTask.dueDate;
+    const existingEvent = await this.prisma.event.findFirst({
+      where: {
+        taskId: updatedTask.id,
+      },
+    });
+
+    const shouldCreateEvent = !existingEvent && hasTime;
+    const shouldUpdateEvent = !!existingEvent && hasTime;
+    const shouldDeleteEvent = !!existingEvent && !hasTime;
+
+    if (shouldCreateEvent) {
+      await this.calendarService.createEventForTask(updatedTask);
+    }
+
+    if (shouldUpdateEvent) {
+      await this.calendarService.updateEventForTask(updatedTask);
+    }
+
+    if (shouldDeleteEvent) {
+      await this.calendarService.deleteEventForTask(updatedTask);
+    }
+
+    return updatedTask;
   }
 
   async remove(id: string) {
+    const task = await this.findOne(id);
+    const existingEvent = await this.prisma.event.findFirst({
+      where: {
+        taskId: id,
+      },
+    });
+
+    if (task && existingEvent) {
+      await this.calendarService.deleteEventForTask(task);
+    }
     return this.prisma.task.delete({ where: { id } });
   }
 

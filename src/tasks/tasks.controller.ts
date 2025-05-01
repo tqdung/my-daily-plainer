@@ -9,12 +9,18 @@ import {
   Controller,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Task } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { TasksService } from './tasks.service';
 import { PaginationResponse } from 'src/common/types';
-import { CreateTaskDto, UpdateTaskDto, GetTaskQueryDto } from './dto';
+import {
+  CreateTaskDto,
+  UpdateTaskDto,
+  GetTaskQueryDto,
+  TaskResponseDto,
+} from './dto';
 import { UserResponseDto } from 'src/users/dto/user-response.dto';
 import { CurrentUser, RequireAuth } from 'src/common/decorators';
+import { transformResponse } from 'src/common/utils';
 
 @Controller('tasks')
 @RequireAuth()
@@ -22,18 +28,23 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post()
-  create(
+  async create(
     @Body() createTaskDto: CreateTaskDto,
     @CurrentUser() user: UserResponseDto,
   ) {
-    return this.tasksService.create({ userId: user.id, data: createTaskDto });
+    const task = await this.tasksService.create({
+      userId: user.id,
+      data: createTaskDto,
+    });
+
+    return transformResponse(TaskResponseDto, task);
   }
 
   @Get()
   async findAll(
     @Query() query: GetTaskQueryDto,
     @CurrentUser() user: UserResponseDto,
-  ): Promise<PaginationResponse<Task>> {
+  ): Promise<PaginationResponse<TaskResponseDto>> {
     const { keyword, status, dueDate, limit, page } = query;
 
     const where: Prisma.TaskWhereInput = {
@@ -49,11 +60,16 @@ export class TasksController {
           }
         : {}),
     };
-    return this.tasksService.getTasks({
+    const { data: tasks = [], ...rest } = await this.tasksService.getTasks({
       where,
       page,
       limit,
     });
+
+    return {
+      data: tasks.map((task) => transformResponse(TaskResponseDto, task)),
+      ...rest,
+    };
   }
 
   @Get(':id')
@@ -63,7 +79,7 @@ export class TasksController {
       throw new NotFoundException();
     }
 
-    return task;
+    return transformResponse(TaskResponseDto, task);
   }
 
   @Patch(':id')
@@ -77,7 +93,8 @@ export class TasksController {
       throw new NotFoundException();
     }
 
-    return this.tasksService.update(id, updateTaskDto);
+    const updated = await this.tasksService.update(id, updateTaskDto);
+    return transformResponse(TaskResponseDto, updated);
   }
 
   @Delete(':id')
@@ -87,6 +104,7 @@ export class TasksController {
       throw new NotFoundException();
     }
 
-    return this.tasksService.remove(id);
+    const removed = await this.tasksService.remove(id);
+    return transformResponse(TaskResponseDto, removed);
   }
 }
