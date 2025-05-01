@@ -90,9 +90,10 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
           ]
         : undefined,
     };
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events${
-      externalCalendarEventId ? `/${externalCalendarEventId}` : ''
-    }`;
+
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+      user.email,
+    )}/events${externalCalendarEventId ? `/${externalCalendarEventId}` : ''}`;
 
     let res = await fetch(url, {
       method,
@@ -153,7 +154,12 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
   }): Promise<string | null> {
     if (!externalCalendarEventId) return null;
 
-    return this.syncTaskToGoogleCalendar({ user, task, method: 'PATCH' });
+    return this.syncTaskToGoogleCalendar({
+      user,
+      task,
+      externalCalendarEventId,
+      method: 'PATCH',
+    });
   }
 
   async deleteEvent({
