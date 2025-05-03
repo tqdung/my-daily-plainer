@@ -13,34 +13,6 @@ export class TasksService {
     private calendarService: CalendarService,
   ) {}
 
-  async create({ userId, data }: { userId: string; data: CreateTaskDto }) {
-    const { goalId, ...rest } = data;
-
-    const task = await this.prisma.task.create({
-      data: {
-        ...rest,
-        user: {
-          connect: { id: userId },
-        },
-        goal: goalId
-          ? {
-              connect: { id: goalId },
-            }
-          : undefined,
-      },
-      include: {
-        user: true,
-        goal: !!goalId,
-      },
-    });
-
-    if (task.startDate && task.dueDate) {
-      await this.calendarService.createEventForTask(task);
-    }
-
-    return task;
-  }
-
   async getTasks({
     where,
     page = 1,
@@ -67,6 +39,34 @@ export class TasksService {
   async findOne(id: string) {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) throw new NotFoundException('Task not found');
+    return task;
+  }
+
+  async create({ userId, data }: { userId: string; data: CreateTaskDto }) {
+    const { goalId, ...rest } = data;
+
+    const task = await this.prisma.task.create({
+      data: {
+        ...rest,
+        user: {
+          connect: { id: userId },
+        },
+        goal: goalId
+          ? {
+              connect: { id: goalId },
+            }
+          : undefined,
+      },
+      include: {
+        user: true,
+        goal: !!goalId,
+      },
+    });
+
+    if (task.startDate && task.dueDate) {
+      await this.calendarService.createEventForTask(task);
+    }
+
     return task;
   }
 

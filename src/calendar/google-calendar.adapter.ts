@@ -1,86 +1,30 @@
-// src/calendar/google-calendar.adapter.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Task, User } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CalendarAdapter } from './interfaces/calendar.adapter';
+import { GoogleCalendarEvent } from './interfaces/google-calendar-event';
 import { decrypt } from 'src/common/utils';
 
-// Reference: https://developers.google.com/workspace/calendar/api/v3/reference/events
-type GoogleCalendarEventBody = {
-  summary: string;
-  description?: string;
-  start: {
-    dateTime: string;
-    timeZone: string;
-  };
-  end: {
-    dateTime: string;
-    timeZone: string;
-  };
-  recurrence?: string[];
-};
+type Method = 'POST' | 'PATCH' | 'DELETE';
 
 @Injectable()
 export class GoogleCalendarAdapter implements CalendarAdapter {
+  private readonly logger: Logger = new Logger(GoogleCalendarAdapter.name);
   constructor(private prisma: PrismaService) {}
 
-  private async refreshAccessToken(user: User): Promise<string | null> {
-    if (!user.providerRefreshToken) return null;
-
-    const decryptedRefreshToken = decrypt(user.providerRefreshToken);
-
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        refresh_token: decryptedRefreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('❌ Failed to refresh Google access token');
-      return null;
-    }
-
-    const data = await response.json();
-    const newAccessToken = data.access_token;
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        providerAccessToken: newAccessToken,
-      },
-    });
-
-    return newAccessToken;
-  }
-
-  private async syncTaskToGoogleCalendar({
-    user,
-    task,
-    method,
-    externalCalendarEventId,
-  }: {
-    user: User;
-    task?: Task;
-    method: 'POST' | 'PATCH' | 'DELETE';
-    externalCalendarEventId?: string;
-  }): Promise<string | null> {
-    const event: GoogleCalendarEventBody = {
-      summary: task?.title ?? '',
-      description: task?.description ?? '',
+  private buildEventPayload(task: Task): GoogleCalendarEvent {
+    return {
+      summary: task.title,
+      description: task.description ?? '',
       start: {
-        dateTime: task?.startDate?.toISOString() ?? '',
+        dateTime: task.startDate?.toISOString() ?? '',
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       end: {
-        dateTime: task?.dueDate?.toISOString() ?? '',
+        dateTime: task.dueDate?.toISOString() ?? '',
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
-      recurrence: task?.repeat
+      recurrence: task.repeat
         ? [
             `RRULE:FREQ=${task.repeat.toUpperCase()}${
               task.repeatDays?.length
@@ -89,58 +33,96 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
             }`,
           ]
         : undefined,
+      id: '', // Placeholder, Google will generate this
     };
+  }
 
+  private async refreshAccessToken(user: User): Promise<string | null> {
+    if (!user.providerRefreshToken) return null;
+
+    const decryptedRefreshToken = decrypt(user.providerRefreshToken);
+    const body = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID ?? '',
+      client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+      refresh_token: decryptedRefreshToken ?? '',
+      grant_type: 'refresh_token',
+    });
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+
+    if (!res.ok) {
+      this.logger.error('❌ Failed to refresh access token', await res.text());
+      return null;
+    }
+
+    const data = await res.json();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { providerAccessToken: data.access_token },
+    });
+
+    return data.access_token;
+  }
+
+  private async callGoogleAPI({
+    user,
+    method,
+    task,
+    externalCalendarEventId,
+  }: {
+    user: User;
+    method: Method;
+    task?: Task;
+    externalCalendarEventId?: string;
+  }): Promise<string | null> {
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
       user.email,
     )}/events${externalCalendarEventId ? `/${externalCalendarEventId}` : ''}`;
 
-    let res = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${user.providerAccessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(event),
-    });
+    const headers = {
+      Authorization: `Bearer ${user.providerAccessToken}`,
+      'Content-Type': 'application/json',
+    };
 
-    // Retry if 401
+    const body = task
+      ? JSON.stringify(this.buildEventPayload(task))
+      : undefined;
+    let res = await fetch(url, { method, headers, body });
+
     if (res.status === 401) {
       const newToken = await this.refreshAccessToken(user);
-      if (newToken) {
-        res = await fetch(url, {
-          method,
-          headers: {
-            Authorization: `Bearer ${newToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(event),
-        });
-      }
+      if (!newToken) return null;
+
+      res = await fetch(url, {
+        method,
+        headers: {
+          ...headers,
+          Authorization: `Bearer ${newToken}`,
+        },
+        body,
+      });
     }
 
     if (!res.ok) {
-      const error = await res.json();
-      console.error(`❌ Google Calendar ${method} failed:`, error);
+      this.logger.error(
+        `❌ Google Calendar ${method} failed (${res.status}):`,
+        await res.text(),
+      );
       return null;
     }
 
-    if (res.status === 204) {
-      return `${externalCalendarEventId}`;
-    }
+    if (res.status === 204) return externalCalendarEventId ?? null;
 
-    const data = await res.json();
-    return data?.id;
+    const data: GoogleCalendarEvent = await res.json();
+    return data.id;
   }
 
-  async createEvent({
-    user,
-    task,
-  }: {
-    user: User;
-    task: Task;
-  }): Promise<string | null> {
-    return this.syncTaskToGoogleCalendar({ user, task, method: 'POST' });
+  async createEvent({ user, task }: { user: User; task: Task }) {
+    return this.callGoogleAPI({ user, task, method: 'POST' });
   }
 
   async updateEvent({
@@ -151,14 +133,12 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
     user: User;
     task: Task;
     externalCalendarEventId: string;
-  }): Promise<string | null> {
-    if (!externalCalendarEventId) return null;
-
-    return this.syncTaskToGoogleCalendar({
+  }) {
+    return this.callGoogleAPI({
       user,
       task,
-      externalCalendarEventId,
       method: 'PATCH',
+      externalCalendarEventId,
     });
   }
 
@@ -168,10 +148,8 @@ export class GoogleCalendarAdapter implements CalendarAdapter {
   }: {
     user: User;
     externalCalendarEventId: string;
-  }): Promise<string | null> {
-    if (!externalCalendarEventId) return null;
-
-    return this.syncTaskToGoogleCalendar({
+  }) {
+    return this.callGoogleAPI({
       user,
       method: 'DELETE',
       externalCalendarEventId,

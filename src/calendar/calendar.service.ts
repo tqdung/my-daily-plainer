@@ -10,29 +10,27 @@ export class CalendarService {
     private readonly adapter: CalendarAdapter,
   ) {}
 
-  async findTaskEvent(taskId: string) {
-    return this.prisma.event.findFirst({
-      where: {
-        taskId,
-      },
-    });
+  private async getUser(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  private async getEventByTask(taskId: string) {
+    const event = await this.prisma.event.findFirst({ where: { taskId } });
+    if (!event) throw new NotFoundException('Event not found for task');
+    return event;
   }
 
   async createEventForTask(task: Task) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: task.userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException();
-    }
+    const user = await this.getUser(task.userId);
 
     const event = await this.prisma.event.create({
       data: {
         taskId: task.id,
         userId: task.userId,
-        goalId: task.goalId ?? undefined,
-        calendarProvider: user?.calendarProvider as CalendarProvider,
+        goalId: task.goalId,
+        calendarProvider: user.calendarProvider as CalendarProvider,
       },
     });
 
@@ -41,64 +39,37 @@ export class CalendarService {
     if (externalId) {
       await this.prisma.event.update({
         where: { id: event.id },
-        data: {
-          externalEventId: externalId,
-        },
+        data: { externalEventId: externalId },
       });
     }
   }
 
   async updateEventForTask(task: Task) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: task.userId },
+    const user = await this.getUser(task.userId);
+    const event = await this.getEventByTask(task.id);
+
+    await this.adapter.updateEvent({
+      user,
+      task,
+      externalCalendarEventId: event.externalEventId ?? '',
     });
 
-    if (!user) {
-      throw new NotFoundException();
-    }
-
-    const existingEvent = await this.findTaskEvent(task.id);
-
-    if (!existingEvent) {
-      throw new NotFoundException();
-    }
-
-    await Promise.all([
-      this.prisma.event.update({
-        where: { id: existingEvent.id },
-        data: {
-          goalId: task.goalId,
-        },
-      }),
-      this.adapter.updateEvent({
-        user,
-        task,
-        externalCalendarEventId: existingEvent.externalEventId ?? '',
-      }),
-    ]);
+    await this.prisma.event.update({
+      where: { id: event.id },
+      data: { goalId: task.goalId },
+    });
   }
 
   async deleteEventForTask(task: Task) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: task.userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException();
-    }
-
-    const existingEvent = await this.findTaskEvent(task.id);
-
-    if (!existingEvent) {
-      throw new NotFoundException();
-    }
+    const user = await this.getUser(task.userId);
+    const event = await this.getEventByTask(task.id);
 
     await Promise.all([
-      this.prisma.event.delete({ where: { id: existingEvent.id } }),
       this.adapter.deleteEvent({
         user,
-        externalCalendarEventId: existingEvent.externalEventId ?? '',
+        externalCalendarEventId: event.externalEventId ?? '',
       }),
+      this.prisma.event.delete({ where: { id: event.id } }),
     ]);
   }
 }

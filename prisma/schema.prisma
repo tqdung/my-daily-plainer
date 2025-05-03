@@ -86,7 +86,6 @@ model Task {
 
   reminders Reminder[]
 
-  // ✅ Relation mới
   events Event[]
 }
 
