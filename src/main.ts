@@ -3,6 +3,8 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import * as cookieParser from 'cookie-parser';
+import { AllExceptionsFilter } from './common/filters';
+
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -10,8 +12,6 @@ async function bootstrap() {
     bufferLogs: true,
     logger: ['error', 'warn'],
   });
-  const logger = new Logger('Bootstrap');
-  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -19,8 +19,9 @@ async function bootstrap() {
       forbidNonWhitelisted: true, // Optional, throws error if extra properties are present
     }),
   );
-
   app.use(cookieParser());
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   const config = new DocumentBuilder()
     .setTitle('Task API')
@@ -30,17 +31,6 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
-
-  // ✅ Log uncaught exceptions
-  process.on('uncaughtException', (err) => {
-    logger.error('Uncaught Exception:', err);
-    process.exit(1);
-  });
-
-  // ✅ Log unhandled promise rejections
-  process.on('unhandledRejection', (reason: any, promise) => {
-    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  });
 
   await app.listen(process.env.PORT ?? 3000);
 }
